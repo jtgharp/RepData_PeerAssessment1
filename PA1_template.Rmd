@@ -1,25 +1,154 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
+title: "Reproducible Research - Project 1"
+author: "Jagannath Gharpure"
+date: "July 26, 2017"
 output: 
-  html_document:
-    keep_md: true
+  html_document: 
+    fig_caption: yes
+    keep_md: yes
+    toc: yes
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(cache = FALSE)
 
-## Loading and preprocessing the data
+```
+
+## R Markdown
+
+unzip the zip in working directory.  Then read activity.csv from working diectory into data. Use StringsAsfactors=FALSE to ensure date column will be of calss date and not Factors. need lubridate package if we want to handle dates
+
+```{r readFile}
+      library(lubridate)
+      unzip("activity.zip")
+      activityData <- read.csv("activity.csv", sep = "," , stringsAsFactors = FALSE)
+      head(activityData)
+      
+```
+    Now we will total daily steps and draw histogram. We will use FD algorithm instead of Sturges algorithm (which is default). We will also draw a rug below histogram so we can see in which bins data is concentrated 
+```{r drawHistogram}
+      dailyTotal <- aggregate(steps~date,activityData,sum)
+      hist(dailyTotal$steps,main= "Histogram of Daily Total Steps Using FD algorithm", sub = "Rug shows data density in bins", xlab = "Daily Total Steps" , ylab= "Frequency", col= "lightblue", breaks ="FD" )
+      rug(dailyTotal$steps, col="red")
+    
+```
+
+Now we will Calculate and report the mean and median of the total number of steps taken per day
+```{r meanAndMedian}
+dailyStepMean <- mean(dailyTotal$steps)
+dailyStepMedian <-median(dailyTotal$steps)
+```
+Daily Total Steps mean = `r dailyStepMean  `
+
+Daily Total Median = `r dailyStepMedian  `
+
+Now we will draw a time series plot.
+
+```{r drawTimeSeries}
+      avgStepsByInterval <- aggregate(steps~interval,activityData,mean)
+      plot(avgStepsByInterval$interval,avgStepsByInterval$steps,main = "Steps Averaged across all days BY Interval" , xlab = "Interval", ylab = "Average Steps" ,  type="l", xaxt ="n")
+     axis(1, at = seq(0, 2355, by = 75), las=2, col = "blue") 
+    
+```
+
+Now we wil answer: Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+```{r whichIntervalWithMaxSteps}
+maxStepRow <- avgStepsByInterval[which.max(avgStepsByInterval$steps),]
+maxStepRow
+
+```
+The interval = `r maxStepRow$interval` has max steps = `r maxStepRow$steps `
+
+Now we will Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+
+```{r calcNoOfNARows}
+nac <- is.na(activityData)
+noOfRowsWithNAs <- sum(nac[,"steps"])
+noOfRowsWithNAs
+```
+
+The number of rows with missing values (NAs) in steps column = `r noOfRowsWithNAs `
+
+Now we will Devise a strategy for filling in all of the missing values in the dataset. We will impute the NA values by using the mean for that 5-minute interval 
 
 
+```{r DOIMPUTE}
+      library(dplyr)      
+      adtbl <-tbl_df(activityData)
+      astbl <- tbl_df(avgStepsByInterval)
+      jt <- inner_join(adtbl,astbl, by="interval") 
+      #note inner_join creates two columns steps.x from adtbl and steps.y from astbl
+      #now let us see head and tail of jt
+      head(jt)
+      tail(jt)
+      #note that steps.x has NA values. steps.y does not.  Thoses are averages for the itnerval
+      
+      index <- is.na(jt$steps.x)
+      #we set steps.x to be steps.y (when steps.x is NA)
+      jt$steps.x[index]<-(jt$steps.y[index])
+      
+    #let us print the head and tail to see few rows        
+       head(jt) 
+       tail(jt)
 
-## What is mean total number of steps taken per day?
+```
+From above head and tail prints we see that we have filled in step.x (which was NA) with the steps.y values.  This satisfies the assignment requirement --> "Create a new dataset that is equal to the original dataset but with the missing data (NA) filled in."
 
 
+Now we will Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
 
-## What is the average daily activity pattern?
+```{r drawHistogramNEW}
+      dailyTotalNew <- aggregate(steps.x~date,jt,sum)
+      hist(dailyTotalNew$steps.x,main= "Histogram of Daily Total Steps(with imputed values) Using FD algorithm ", sub = "Rug shows data density in bins", xlab = "Daily Total Steps" , ylab= "Frequency", col= "lightblue", breaks ="FD" )
+      rug(dailyTotalNew$steps.x, col="red")
+    
+```
+
+Now we will Calculate and report the mean and median of the total number of steps taken per day with imputed data
+
+```{r meanAndMedianNew}
+dailyStepMeanNew <- mean(dailyTotalNew$steps)
+dailyStepMedianNew <-median(dailyTotalNew$steps)
+```
+
+Daily Total Steps mean = `r dailyStepMeanNew  `
+
+Daily Total Median = `r dailyStepMedianNew  `
+
+We see that the difference, mean without impute - mean with imputed data = `r dailyStepMean -dailyStepMeanNew  `
+
+and the difference, median without impute - median with imputed data = `r dailyStepMedian - dailyStepMedianNew  `
+
+Now  (1) Create a new factor variable in the dataset with two levels - "weekday" ("WD") and "weekend" ("WND")indicating whether a given date is a weekday or weekend day. and then
+
+(2) Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). 
 
 
+```{r plotgg}
+library(ggplot2)
+#now add week days column
+      jt$day <- weekdays(as.Date(jt$date), abbreviate = FALSE)
+  #Now classify as "WD" or "WND"    also mutate to add a column indicating WD or WND 
+      jt<- jt%>%
+            mutate(wdwnd = ifelse(jt$day=="Saturday" | jt$day=="Sunday", "WND", "WD"))
+      # Now find avg steps by interval by WD or WND type     
+      avgstepsByIntvlAndWT<- jt%>%
+            group_by(interval, wdwnd)%>%
+            summarise(avg_steps2 = mean(steps.x, na.rm=TRUE))
+      head(avgstepsByIntvlAndWT)
+      
+      plot<- ggplot(avgstepsByIntvlAndWT, aes(x =interval , y=avg_steps2, color=wdwnd)) +
+            geom_line() +
+            labs(title = "Avg. Daily Steps by Weektype", x = "Interval", y = "No. of Steps") +
+            facet_wrap(~wdwnd, ncol = 1, nrow=2) 
+      print(plot)
 
-## Imputing missing values
+```
 
+QUESTION: Are there differences in activity patterns between weekdays and weekends?
 
+Answer: Yes, there are differences. It seems the individual is active at start of the weekdays but not much after that. But during weekend the individual is active throughout.
 
-## Are there differences in activity patterns between weekdays and weekends?
+a========================================================================a
